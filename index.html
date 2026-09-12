@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Kippenhok Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#EDE7DA;
+    --panel:#FFFFFF;
+    --ink:#2A241C;
+    --ink-soft:#75695A;
+    --line:#DDD5C2;
+    --amber:#C98A2B;
+    --amber-soft:#F3E3C4;
+    --rust:#B5482A;
+    --rust-soft:#F2DAD1;
+    --sage:#5E7A4E;
+    --sage-soft:#E1E9D8;
+    --slate:#4C6A87;
+    --slate-soft:#DCE6EE;
+    --radius:10px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'Inter',system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 20px 60px;}
+  header.top{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:22px;}
+  header.top h1{font-family:'Fraunces',serif;font-weight:600;font-size:28px;margin:0;letter-spacing:-0.01em;}
+  header.top .today{color:var(--ink-soft);font-size:14px;}
+
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:20px 22px;}
+  .panel + .panel{margin-top:18px;}
+  .panel h2{font-family:'Fraunces',serif;font-weight:500;font-size:17px;margin:0 0 14px;}
+
+  form.entry{display:grid;grid-template-columns:repeat(5,1fr) auto;gap:14px;align-items:end;}
+  @media (max-width:900px){ form.entry{grid-template-columns:repeat(2,1fr);} }
+  .field{display:flex;flex-direction:column;gap:6px;}
+  .field label{font-size:12.5px;color:var(--ink-soft);}
+  .field input{
+    border:1px solid var(--line);border-radius:7px;padding:9px 10px;
+    font-family:'Inter',sans-serif;font-size:14.5px;color:var(--ink);background:#FCFBF8;
+  }
+  .field input:focus{outline:2px solid var(--slate);outline-offset:1px;}
+  .field .hint{font-size:11.5px;color:var(--ink-soft);}
+  button{
+    font-family:'Inter',sans-serif;font-size:14px;font-weight:600;
+    border-radius:7px;border:1px solid transparent;padding:10px 16px;cursor:pointer;
+  }
+  button.primary{background:var(--ink);color:#fff;}
+  button.primary:hover{background:#413828;}
+  button.ghost{background:transparent;color:var(--ink-soft);border:1px solid var(--line);}
+  button.ghost:hover{border-color:var(--ink-soft);color:var(--ink);}
+  button.small{padding:5px 10px;font-size:12.5px;}
+  .toolbar{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;}
+
+  .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-top:18px;}
+  @media (max-width:1000px){ .stats{grid-template-columns:repeat(2,1fr);} }
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;border-top:3px solid var(--accent,#000);}
+  .stat .label{font-size:12.5px;color:var(--ink-soft);}
+  .stat .value{font-family:'Fraunces',serif;font-size:30px;font-weight:600;margin:4px 0 2px;}
+  .stat .sub{font-size:12px;color:var(--ink-soft);}
+
+  .charts{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px;}
+  @media (max-width:900px){ .charts{grid-template-columns:1fr;} }
+  .chart-title{font-size:13px;color:var(--ink-soft);margin-bottom:6px;}
+
+  table{width:100%;border-collapse:collapse;font-size:13.5px;}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap;}
+  th{color:var(--ink-soft);font-weight:600;font-size:12px;}
+  tbody tr:hover{background:#FAF8F3;}
+  td.num{text-align:right;font-variant-numeric:tabular-nums;}
+  .table-scroll{overflow-x:auto;}
+  .row-actions{display:flex;gap:6px;}
+  .empty{color:var(--ink-soft);font-size:13.5px;padding:10px 0;}
+  .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11.5px;font-weight:600;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<script>
+const e = React.createElement;
+const { useState, useEffect, useMemo } = React;
+
+// ============================================================
+// VUL HIERONDER JE EIGEN GOOGLE APPS SCRIPT WEB APP URL IN
+// (die krijg je in stap 4 van het stappenplan, eindigt op /exec)
+// ============================================================
+const SHEET_API_URL = "https://script.google.com/macros/s/AKfycbzTaaHmtCw14TDLmy86LyFRGjR6cli7qeDENqt5Iqt5EkJEjA439VG0DH1Kuh1iDImE/exec";
+
+function todayStr(){
+  const d = new Date();
+  const p = n => String(n).padStart(2,"0");
+  return d.getFullYear() + "-" + p(d.getMonth()+1) + "-" + p(d.getDate());
+}
+function fmtDateNL(iso){
+  const [y,m,d] = String(iso).slice(0,10).split("-");
+  return d + "-" + m + "-" + y;
+}
+function num(v){ const n = parseFloat(v); return isNaN(n) ? 0 : n; }
+function round1(v){ return Math.round(v*10)/10; }
+
+async function fetchRecordsFromSheet(){
+  const res = await fetch(SHEET_API_URL, { method: 'GET' });
+  const data = await res.json();
+  return Array.isArray(data) ? data.map(r => ({
+    datum: String(r.datum).slice(0,10),
+    kippenStart: num(r.kippenStart),
+    uitval: num(r.uitval),
+    eieren: num(r.eieren),
+    voerKg: num(r.voerKg),
+    waterLiter: num(r.waterLiter)
+  })) : [];
+}
+async function sendToSheet(payload){
+  try{
+    await fetch(SHEET_API_URL, {
+      method: 'POST',
+      headers: {'Content-Type': 'text/plain;charset=utf-8'},
+      body: JSON.stringify(payload)
+    });
+  }catch(err){
+    // De browser kan het antwoord soms niet lezen door beveiliging van de browser zelf,
+    // maar de Google Sheet is meestal toch bijgewerkt. We halen daarna altijd de
+    // actuele lijst opnieuw op, dus dit is geen probleem.
+  }
+}
+
+function kippenNu(r){ return Math.max(0, num(r.kippenStart) - num(r.uitval)); }
+function productiePct(r){
+  const kn = kippenNu(r);
+  return kn > 0 ? (num(r.eieren) / kn) * 100 : 0;
+}
+function getPreviousRecord(records, datum){
+  const prior = records.filter(r => r.datum < datum).sort((a,b) => a.datum.localeCompare(b.datum));
+  return prior.length ? prior[prior.length-1] : null;
+}
+
+// ---------- SVG line chart (no external chart library) ----------
+function LineChart({ data, accessor, color, unit, height }){
+  height = height || 200;
+  const width = 560;
+  const padL = 46, padR = 14, padT = 14, padB = 26;
+  const innerW = width - padL - padR;
+  const innerH = height - padT - padB;
+
+  if(!data.length){
+    return e('div', {className:'empty'}, 'Nog geen data om te tonen.');
+  }
+  const values = data.map(accessor);
+  let min = Math.min(...values), max = Math.max(...values);
+  if(min === max){ min -= 1; max += 1; }
+  const pad = (max - min) * 0.1;
+  min -= pad; max += pad;
+
+  const x = i => padL + (data.length === 1 ? innerW/2 : (i/(data.length-1)) * innerW);
+  const y = v => padT + innerH - ((v - min)/(max - min)) * innerH;
+
+  const points = data.map((d,i) => x(i) + ',' + y(accessor(d)));
+  const path = 'M' + points.join(' L');
+
+  const gridVals = [min + (max-min)*0.0, min + (max-min)*0.5, min + (max-min)*1.0];
+
+  const first = data[0], last = data[data.length-1];
+
+  return e('svg', {viewBox: '0 0 ' + width + ' ' + height, width:'100%', height, role:'img'},
+    gridVals.map((gv,idx) => e('g', {key:'g'+idx},
+      e('line', {x1:padL, x2:width-padR, y1:y(gv), y2:y(gv), stroke:'#E7E1D3', strokeWidth:1}),
+      e('text', {x:padL-8, y:y(gv)+4, fontSize:10, fill:'#75695A', textAnchor:'end'}, Math.round(gv*10)/10)
+    )),
+    e('path', {d:path, fill:'none', stroke:color, strokeWidth:2.5, strokeLinejoin:'round', strokeLinecap:'round'}),
+    data.map((d,i) => e('circle', {key:i, cx:x(i), cy:y(accessor(d)), r:3.5, fill:color},
+      e('title', null, fmtDateNL(d.datum) + ': ' + round1(accessor(d)) + (unit||''))
+    )),
+    e('text', {x:padL, y:height-6, fontSize:10.5, fill:'#75695A'}, fmtDateNL(first.datum)),
+    e('text', {x:width-padR, y:height-6, fontSize:10.5, fill:'#75695A', textAnchor:'end'}, fmtDateNL(last.datum))
+  );
+}
+
+// ---------- Stat card ----------
+function StatCard({label, value, sub, color}){
+  return e('div', {className:'stat', style:{'--accent':color}},
+    e('div', {className:'label'}, label),
+    e('div', {className:'value'}, value),
+    sub ? e('div', {className:'sub'}, sub) : null
+  );
+}
+
+// ---------- Entry form ----------
+function EntryForm({ records, onSave, editing, onCancelEdit }){
+  const blank = () => {
+    const d = todayStr();
+    const prev = getPreviousRecord(records, d);
+    return {
+      datum: d,
+      kippenStart: prev ? kippenNu(prev) : '',
+      uitval: '',
+      eieren: '',
+      voerKg: '',
+      waterLiter: ''
+    };
+  };
+  const [form, setForm] = useState(editing || blank());
+
+  useEffect(() => {
+    if(editing){ setForm(editing); }
+  }, [editing]);
+
+  function onDateChange(newDate){
+    const existing = records.find(r => r.datum === newDate);
+    if(existing){
+      setForm(existing);
+      return;
+    }
+    const prev = getPreviousRecord(records, newDate);
+    setForm(f => ({...f, datum:newDate, kippenStart: prev ? kippenNu(prev) : f.kippenStart}));
+  }
+
+  function set(field, value){
+    setForm(f => ({...f, [field]: value}));
+  }
+
+  function submit(ev){
+    ev.preventDefault();
+    if(!form.datum || form.kippenStart === ''){
+      alert('Vul minimaal de datum en het aantal kippen bij start in.');
+      return;
+    }
+    onSave({
+      datum: form.datum,
+      kippenStart: num(form.kippenStart),
+      uitval: num(form.uitval),
+      eieren: num(form.eieren),
+      voerKg: num(form.voerKg),
+      waterLiter: num(form.waterLiter)
+    });
+    if(!editing) setForm(blank());
+  }
+
+  return e('form', {className:'entry', onSubmit:submit},
+    e('div', {className:'field'},
+      e('label', null, 'Datum'),
+      e('input', {type:'date', value:form.datum, onChange:ev=>onDateChange(ev.target.value)})
+    ),
+    e('div', {className:'field'},
+      e('label', null, 'Kippen bij start'),
+      e('input', {type:'number', min:0, value:form.kippenStart, onChange:ev=>set('kippenStart', ev.target.value)}),
+      e('span', {className:'hint'}, 'auto ingevuld o.b.v. vorige dag')
+    ),
+    e('div', {className:'field'},
+      e('label', null, 'Uitval'),
+      e('input', {type:'number', min:0, value:form.uitval, onChange:ev=>set('uitval', ev.target.value)})
+    ),
+    e('div', {className:'field'},
+      e('label', null, 'Eieren'),
+      e('input', {type:'number', min:0, value:form.eieren, onChange:ev=>set('eieren', ev.target.value)})
+    ),
+    e('div', {className:'field'},
+      e('label', null, 'Voer (kg)'),
+      e('input', {type:'number', min:0, step:'0.1', value:form.voerKg, onChange:ev=>set('voerKg', ev.target.value)})
+    ),
+    e('div', {className:'field'},
+      e('label', null, 'Water (L)'),
+      e('input', {type:'number', min:0, step:'0.1', value:form.waterLiter, onChange:ev=>set('waterLiter', ev.target.value)})
+    ),
+    e('div', {className:'field', style:{gridColumn:'1 / -1', flexDirection:'row', gap:10}},
+      e('button', {type:'submit', className:'primary'}, editing ? 'Wijziging opslaan' : 'Dag opslaan'),
+      editing ? e('button', {type:'button', className:'ghost', onClick:onCancelEdit}, 'Annuleren') : null
+    )
+  );
+}
+
+// ---------- History table ----------
+function HistoryTable({ records, onEdit, onDelete }){
+  const sorted = [...records].sort((a,b) => b.datum.localeCompare(a.datum));
+  if(!sorted.length){
+    return e('div', {className:'empty'}, 'Nog geen dagen ingevoerd. Vul hierboven de eerste dag in.');
+  }
+  return e('div', {className:'table-scroll'},
+    e('table', null,
+      e('thead', null, e('tr', null,
+        ['Datum','Kippen start','Uitval','Kippen nu','Eieren','Productie %','Voer kg','Water L','Acties'].map(h => e('th', {key:h}, h))
+      )),
+      e('tbody', null, sorted.map(r => e('tr', {key:r.datum},
+        e('td', null, fmtDateNL(r.datum)),
+        e('td', {className:'num'}, r.kippenStart),
+        e('td', {className:'num'}, r.uitval),
+        e('td', {className:'num'}, kippenNu(r)),
+        e('td', {className:'num'}, r.eieren),
+        e('td', {className:'num'}, round1(productiePct(r)) + '%'),
+        e('td', {className:'num'}, r.voerKg),
+        e('td', {className:'num'}, r.waterLiter),
+        e('td', null, e('div', {className:'row-actions'},
+          e('button', {className:'ghost small', onClick:()=>onEdit(r)}, 'Bewerk'),
+          e('button', {className:'ghost small', onClick:()=>onDelete(r.datum)}, 'Verwijder')
+        ))
+      )))
+    )
+  );
+}
+
+// ---------- Main app ----------
+function App(){
+  const [records, setRecords] = useState([]);
+  const [editing, setEditing] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [error, setError] = useState(null);
+
+  async function refresh(){
+    try{
+      const fresh = await fetchRecordsFromSheet();
+      setRecords(fresh);
+      setError(null);
+    }catch(err){
+      setError('Kon geen verbinding maken met de Google Sheet. Controleer de SHEET_API_URL en of de Web app op "Anyone" staat.');
+    }
+  }
+
+  useEffect(() => {
+    setLoading(true);
+    refresh().finally(() => setLoading(false));
+  }, []);
+
+  async function handleSave(record){
+    setSyncing(true);
+    setRecords(prev => [...prev.filter(r => r.datum !== record.datum), record]); // meteen zien
+    await sendToSheet(Object.assign({action:'save'}, record));
+    await refresh();
+    setSyncing(false);
+    setEditing(null);
+  }
+  async function handleDelete(datum){
+    if(!confirm('Deze dag verwijderen?')) return;
+    setSyncing(true);
+    setRecords(prev => prev.filter(r => r.datum !== datum));
+    await sendToSheet({action:'delete', datum});
+    await refresh();
+    setSyncing(false);
+  }
+  function handleExport(){
+    const sorted = [...records].sort((a,b) => a.datum.localeCompare(b.datum));
+    const rows = sorted.map(r => ({
+      Datum: r.datum,
+      'Kippen bij start': r.kippenStart,
+      Uitval: r.uitval,
+      'Kippen nu': kippenNu(r),
+      Eieren: r.eieren,
+      'Productie %': round1(productiePct(r)),
+      'Voer (kg)': r.voerKg,
+      'Water (L)': r.waterLiter
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Kippenhok');
+    XLSX.writeFile(wb, 'kippenhok-data.xlsx');
+  }
+  function handleImportFile(ev){
+    const file = ev.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = async evt => {
+      try{
+        const wb = XLSX.read(evt.target.result, {type:'binary'});
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws);
+        const imported = rows.map(row => ({
+          datum: String(row['Datum']).slice(0,10),
+          kippenStart: num(row['Kippen bij start']),
+          uitval: num(row['Uitval']),
+          eieren: num(row['Eieren']),
+          voerKg: num(row['Voer (kg)']),
+          waterLiter: num(row['Water (L)'])
+        })).filter(r => r.datum && r.datum !== 'undefined');
+        if(!imported.length){ alert('Geen bruikbare rijen gevonden in dit bestand.'); return; }
+        setSyncing(true);
+        for(const r of imported){
+          await sendToSheet(Object.assign({action:'save'}, r));
+        }
+        await refresh();
+        setSyncing(false);
+      }catch(err){
+        alert('Kon dit bestand niet lezen of niet volledig wegschrijven naar de sheet.');
+        setSyncing(false);
+      }
+    };
+    reader.readAsBinaryString(file);
+    ev.target.value = '';
+  }
+  async function handleResetAll(){
+    if(!confirm('Alle data wissen uit de Google Sheet? Dit kan niet ongedaan gemaakt worden.')) return;
+    setSyncing(true);
+    for(const r of records){
+      await sendToSheet({action:'delete', datum:r.datum});
+    }
+    await refresh();
+    setSyncing(false);
+  }
+
+  const sortedAsc = useMemo(() => [...records].sort((a,b) => a.datum.localeCompare(b.datum)), [records]);
+  const latest = sortedAsc.length ? sortedAsc[sortedAsc.length-1] : null;
+  const totaalUitval = records.reduce((s,r) => s + num(r.uitval), 0);
+
+  if(SHEET_API_URL.indexOf('PLAK_HIER') !== -1){
+    return e('div', {className:'wrap'},
+      e('div', {className:'panel'},
+        e('h2', null, 'Bijna klaar'),
+        e('p', null, 'Deze app is nog niet gekoppeld aan je Google Sheet. Zoek in de bestandscode naar de tekst "SHEET_API_URL" en plak daar de link die je van Google Apps Script krijgt (stap 4 van het stappenplan). Sla daarna dit bestand opnieuw op en zet hem weer op GitHub.')
+      )
+    );
+  }
+  if(loading){
+    return e('div', {className:'wrap'}, e('div', {className:'panel'}, 'Data laden vanuit je Google Sheet...'));
+  }
+
+  return e('div', {className:'wrap'},
+    e('header', {className:'top'},
+      e('h1', null, 'Kippenhok Dashboard'),
+      e('div', {className:'today'},
+        error ? e('span', {style:{color:'var(--rust)'}}, error)
+        : syncing ? 'Bezig met opslaan...'
+        : ('Verbonden met Google Sheet · ' + fmtDateNL(todayStr()))
+      )
+    ),
+
+    e('div', {className:'panel'},
+      e('h2', null, editing ? ('Dag bewerken — ' + fmtDateNL(editing.datum)) : 'Dag invoeren'),
+      e(EntryForm, {records, onSave:handleSave, editing, onCancelEdit:()=>setEditing(null)})
+    ),
+
+    e('div', {className:'stats'},
+      e(StatCard, {
+        label:'Kippen in het hok', color:'var(--sage)',
+        value: latest ? kippenNu(latest) : '–',
+        sub: latest ? ('van ' + latest.kippenStart + ' bij start op ' + fmtDateNL(latest.datum)) : 'nog geen data'
+      }),
+      e(StatCard, {
+        label:'Productie', color:'var(--amber)',
+        value: latest ? round1(productiePct(latest)) + '%' : '–',
+        sub: latest ? (latest.eieren + ' eieren') : ''
+      }),
+      e(StatCard, {
+        label:'Uitval totaal', color:'var(--rust)',
+        value: totaalUitval,
+        sub: latest ? ('vandaag: ' + latest.uitval) : ''
+      }),
+      e(StatCard, {
+        label:'Voer per kip', color:'var(--slate)',
+        value: latest && kippenNu(latest) > 0 ? Math.round((latest.voerKg*1000)/kippenNu(latest)) + ' g' : '–',
+        sub: latest ? ('totaal ' + latest.voerKg + ' kg') : ''
+      }),
+      e(StatCard, {
+        label:'Water per kip', color:'var(--slate)',
+        value: latest && kippenNu(latest) > 0 ? round1((latest.waterLiter*1000)/kippenNu(latest)) + ' ml' : '–',
+        sub: latest ? ('totaal ' + latest.waterLiter + ' L') : ''
+      })
+    ),
+
+    e('div', {className:'charts'},
+      e('div', {className:'panel'},
+        e('div', {className:'chart-title'}, 'Kippen in het hok over tijd'),
+        e(LineChart, {data: sortedAsc, accessor: kippenNu, color:'#5E7A4E', unit:' kippen'})
+      ),
+      e('div', {className:'panel'},
+        e('div', {className:'chart-title'}, 'Productiepercentage over tijd'),
+        e(LineChart, {data: sortedAsc, accessor: productiePct, color:'#C98A2B', unit:'%'})
+      )
+    ),
+
+    e('div', {className:'panel'},
+      e('h2', null, 'Historie'),
+      e(HistoryTable, {records, onEdit:setEditing, onDelete:handleDelete}),
+      e('div', {className:'toolbar'},
+        e('button', {className:'ghost', onClick:handleExport}, 'Exporteer naar Excel'),
+        e('label', {className:'ghost', style:{display:'inline-flex', alignItems:'center', cursor:'pointer'}},
+          'Importeer Excel',
+          e('input', {type:'file', accept:'.xlsx,.xls', style:{display:'none'}, onChange:handleImportFile})
+        ),
+        e('button', {className:'ghost', onClick:handleResetAll}, 'Alles wissen')
+      )
+    )
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(e(App));
+</script>
+</body>
+</html>
