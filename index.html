@@ -63,12 +63,17 @@
   button.small{padding:5px 10px;font-size:12.5px;}
   .toolbar{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;}
 
-  .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-top:18px;}
-  @media (max-width:1000px){ .stats{grid-template-columns:repeat(2,1fr);} }
+  .stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:18px;}
+  @media (max-width:1000px){ .stats{grid-template-columns:repeat(2,minmax(0,1fr));} }
   .stat{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;border-top:3px solid var(--accent,#000);}
   .stat .label{font-size:12.5px;color:var(--ink-soft);}
   .stat .value{font-family:'Fraunces',serif;font-size:30px;font-weight:600;margin:4px 0 2px;}
   .stat .sub{font-size:12px;color:var(--ink-soft);}
+
+  .alert-banner{background:var(--rust-soft);border:1px solid var(--rust);color:var(--rust);padding:12px 16px;border-radius:var(--radius);font-weight:600;font-size:14px;margin-bottom:18px;}
+
+  .lock-wrap{max-width:340px;margin:90px auto;padding:0 20px;}
+  .lock-error{color:var(--rust);font-size:13px;margin-top:8px;}
 
   .charts{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px;}
   @media (max-width:900px){ .charts{grid-template-columns:1fr;} }
@@ -96,11 +101,26 @@
 const e = React.createElement;
 const { useState, useEffect, useMemo } = React;
 
-// ============================================================
+// ================================================F============
 // VUL HIERONDER JE EIGEN GOOGLE APPS SCRIPT WEB APP URL IN
 // (die krijg je in stap 4 van het stappenplan, eindigt op /exec)
 // ============================================================
 const SHEET_API_URL = "https://script.google.com/macros/s/AKfycbzTaaHmtCw14TDLmy86LyFRGjR6cli7qeDENqt5Iqt5EkJEjA439VG0DH1Kuh1iDImE/exec";
+
+// ============================================================
+// TOEGANGSCODE — verander dit in je eigen cijfercode.
+// Let op: dit is een simpel slot, geen echte beveiliging — iemand
+// die verstand heeft van "pagina broncode bekijken" kan de code
+// vinden. Het houdt toevallige bezoekers buiten, niet meer dan dat.
+// ============================================================
+const APP_PIN = "3771";
+
+// ============================================================
+// DREMPELWAARDES UITVAL — pas deze aan naar wat bij jouw koppel past.
+// ============================================================
+const DAG_UITVAL_ALERT = 5;     // vanaf dit aantal per dag telt een dag als 'verhoogd'
+const WEEK_UITVAL_ORANJE = 15;  // vanaf dit totaal deze week wordt het blokje oranje
+const WEEK_UITVAL_ROOD = 25;    // vanaf dit totaal deze week wordt het blokje rood
 
 function todayStr(){
   const d = new Date();
@@ -113,6 +133,21 @@ function fmtDateNL(iso){
 }
 function num(v){ const n = parseFloat(v); return isNaN(n) ? 0 : n; }
 function round1(v){ return Math.round(v*10)/10; }
+
+function getWeekRange(dateStr){
+  const d = new Date(dateStr + 'T00:00:00');
+  const day = d.getDay(); // 0=zondag ... 6=zaterdag
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  const monday = new Date(d); monday.setDate(d.getDate() + diffToMonday);
+  const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+  const toISO = dt => { const p=n=>String(n).padStart(2,'0'); return dt.getFullYear()+'-'+p(dt.getMonth()+1)+'-'+p(dt.getDate()); };
+  return { start: toISO(monday), end: toISO(sunday) };
+}
+function weekUitvalKleur(v){
+  if(v >= WEEK_UITVAL_ROOD) return 'var(--rust)';
+  if(v >= WEEK_UITVAL_ORANJE) return 'var(--amber)';
+  return 'var(--sage)';
+}
 
 async function fetchRecordsFromSheet(){
   const res = await fetch(SHEET_API_URL, { method: 'GET' });
@@ -429,6 +464,20 @@ function App(){
   const latest = sortedAsc.length ? sortedAsc[sortedAsc.length-1] : null;
   const totaalUitval = records.reduce((s,r) => s + num(r.uitval), 0);
 
+  const week = getWeekRange(todayStr());
+  const weekUitval = records
+    .filter(r => r.datum >= week.start && r.datum <= week.end)
+    .reduce((s,r) => s + num(r.uitval), 0);
+
+  let uitvalAlert = null;
+  if(sortedAsc.length >= 2){
+    const last = sortedAsc[sortedAsc.length-1];
+    const prev = sortedAsc[sortedAsc.length-2];
+    if(num(last.uitval) >= DAG_UITVAL_ALERT && num(prev.uitval) >= DAG_UITVAL_ALERT){
+      uitvalAlert = '⚠ Uitval verhoogd: ' + fmtDateNL(prev.datum) + ' (' + prev.uitval + ') en ' + fmtDateNL(last.datum) + ' (' + last.uitval + ') zaten allebei op of boven de ' + DAG_UITVAL_ALERT + ' per dag.';
+    }
+  }
+
   if(SHEET_API_URL.indexOf('PLAK_HIER') !== -1){
     return e('div', {className:'wrap'},
       e('div', {className:'panel'},
@@ -444,12 +493,17 @@ function App(){
   return e('div', {className:'wrap'},
     e('header', {className:'top'},
       e('h1', null, 'Kippenhok Dashboard'),
-      e('div', {className:'today'},
-        error ? e('span', {style:{color:'var(--rust)'}}, error)
-        : syncing ? 'Bezig met opslaan...'
-        : ('Verbonden met Google Sheet · ' + fmtDateNL(todayStr()))
+      e('div', {style:{display:'flex', alignItems:'center', gap:14}},
+        e('div', {className:'today'},
+          error ? e('span', {style:{color:'var(--rust)'}}, error)
+          : syncing ? 'Bezig met opslaan...'
+          : ('Verbonden met Google Sheet · ' + fmtDateNL(todayStr()))
+        ),
+        e('button', {className:'ghost small', onClick:()=>{ localStorage.removeItem('kippenhok_unlocked'); location.reload(); }}, 'Vergrendel')
       )
     ),
+
+    uitvalAlert ? e('div', {className:'alert-banner'}, uitvalAlert) : null,
 
     e('div', {className:'panel'},
       e('h2', null, editing ? ('Dag bewerken — ' + fmtDateNL(editing.datum)) : 'Dag invoeren'),
@@ -471,6 +525,11 @@ function App(){
         label:'Uitval totaal', color:'var(--rust)',
         value: totaalUitval,
         sub: latest ? ('vandaag: ' + latest.uitval) : ''
+      }),
+      e(StatCard, {
+        label:'Uitval deze week', color: weekUitvalKleur(weekUitval),
+        value: weekUitval,
+        sub: fmtDateNL(week.start) + ' t/m ' + fmtDateNL(week.end)
       }),
       e(StatCard, {
         label:'Voer per kip', color:'var(--slate)',
@@ -510,7 +569,43 @@ function App(){
   );
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(e(App));
+// ---------- Toegangsslot ----------
+function Gate(){
+  const [unlocked, setUnlocked] = useState(localStorage.getItem('kippenhok_unlocked') === 'yes');
+  const [pinInput, setPinInput] = useState('');
+  const [wrongPin, setWrongPin] = useState(false);
+
+  function submit(ev){
+    ev.preventDefault();
+    if(pinInput === APP_PIN){
+      localStorage.setItem('kippenhok_unlocked', 'yes');
+      setUnlocked(true);
+    }else{
+      setWrongPin(true);
+    }
+  }
+
+  if(unlocked) return e(App);
+
+  return e('div', {className:'lock-wrap'},
+    e('div', {className:'panel'},
+      e('h2', null, 'Toegangscode'),
+      e('form', {onSubmit:submit},
+        e('div', {className:'field'},
+          e('label', null, 'Vul de cijfercode in'),
+          e('input', {
+            type:'password', inputMode:'numeric', pattern:'[0-9]*', autoFocus:true,
+            value:pinInput, onChange:ev => { setPinInput(ev.target.value); setWrongPin(false); }
+          })
+        ),
+        wrongPin ? e('div', {className:'lock-error'}, 'Onjuiste code, probeer het opnieuw.') : null,
+        e('button', {type:'submit', className:'primary', style:{marginTop:14, width:'100%'}}, 'Ontgrendel')
+      )
+    )
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(e(Gate));
 </script>
 </body>
 </html>
